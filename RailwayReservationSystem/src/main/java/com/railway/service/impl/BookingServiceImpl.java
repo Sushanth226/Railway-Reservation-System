@@ -58,33 +58,49 @@ public class BookingServiceImpl implements BookingService {
             throw new Exception("Passenger with ID " + passengerId + " not found. Please register first.");
         }
 
-        // 2. Verify train exists (searchTrainByNumber throws TrainNotFoundException if not found)
+        // 2. Verify train exists
         Train train = trainService.searchTrainByNumber(trainNumber);
 
-        // 3. Check seat availability
-        if (train.getAvailableSeats() <= 0) {
-            throw new Exception("Sorry, Train " + trainNumber + " is fully booked.");
+        // 3. Generate PNR
+        String pnr = "PNR" + System.currentTimeMillis();
+
+        // 4. Calculate Dynamic Pricing
+        double finalPrice = train.getTicketPrice();
+        // If 10% or fewer seats are available, apply 1.5x surge pricing
+        if (train.getAvailableSeats() <= (0.10 * train.getTotalSeats())) {
+            finalPrice = train.getTicketPrice() * 1.5;
+            System.out.println("\n*** Surge pricing applied (1.5x) due to high demand! ***");
         }
 
-        // 4. Allocate seat and reduce availability
-        int allocatedSeat = train.getTotalSeats() - train.getAvailableSeats() + 1;
-        train.setAvailableSeats(train.getAvailableSeats() - 1);
-        
+        int allocatedSeat;
+        TicketStatus status;
+
+        // 5. Check seat availability for booking vs waitlist
+        if (train.getAvailableSeats() > 0) {
+            // Allocate seat and reduce availability
+            allocatedSeat = train.getTotalSeats() - train.getAvailableSeats() + 1;
+            train.setAvailableSeats(train.getAvailableSeats() - 1);
+            status = TicketStatus.BOOKED;
+        } else {
+            // Waitlist logic
+            allocatedSeat = 0; // 0 indicates no seat yet
+            status = TicketStatus.WAITLISTED;
+            train.getWaitingList().add(pnr);
+            System.out.println("\n*** No seats available. You have been added to the Waiting List. ***");
+        }
+
         // Save the updated train state to disk!
         trainService.saveTrainData();
 
-        // 5. Generate PNR (Simple generation: PNR + current milliseconds for uniqueness)
-        String pnr = "PNR" + System.currentTimeMillis();
-
-        // 6. Create the ticket (assume travel date is tomorrow for simplicity)
+        // 6. Create the ticket
         Ticket ticket = new Ticket(
                 pnr, 
                 passenger, 
                 train, 
                 LocalDate.now().plusDays(1), 
                 allocatedSeat, 
-                train.getTicketPrice(), 
-                TicketStatus.BOOKED
+                finalPrice, 
+                status
         );
 
         // 7. Save to map and disk
@@ -107,14 +123,36 @@ public class BookingServiceImpl implements BookingService {
             throw new InvalidPNRException("This ticket is already cancelled.");
         }
 
+        // Keep track of the original status
+        TicketStatus originalStatus = ticket.getStatus();
+
         // 3. Mark as cancelled
         ticket.setStatus(TicketStatus.CANCELLED);
 
         try {
-            // 4. Increase train seat availability
-            // We fetch the live train object from the TrainService to ensure data consistency
+            // 4. Update train availability and handle waiting list
             Train liveTrain = trainService.searchTrainByNumber(ticket.getTrain().getTrainNumber());
-            liveTrain.setAvailableSeats(liveTrain.getAvailableSeats() + 1);
+            
+            if (originalStatus == TicketStatus.WAITLISTED) {
+                // If it was a waitlisted ticket, just remove them from the queue
+                liveTrain.getWaitingList().remove(pnr);
+            } else if (originalStatus == TicketStatus.BOOKED) {
+                // If a confirmed ticket was cancelled, check the waiting list
+                if (!liveTrain.getWaitingList().isEmpty()) {
+                    // Upgrade the first person on the waiting list
+                    String waitlistedPnr = liveTrain.getWaitingList().poll();
+                    Ticket waitlistedTicket = ticketMap.get(waitlistedPnr);
+                    
+                    if (waitlistedTicket != null) {
+                        waitlistedTicket.setStatus(TicketStatus.BOOKED);
+                        waitlistedTicket.setSeatNumber(ticket.getSeatNumber()); // Give them the cancelled seat
+                        System.out.println("\n*** AUTO-UPGRADE: Ticket " + waitlistedPnr + " has been upgraded from WAITLISTED to BOOKED! ***");
+                    }
+                } else {
+                    // No one is waiting, just increase available seats
+                    liveTrain.setAvailableSeats(liveTrain.getAvailableSeats() + 1);
+                }
+            }
             trainService.saveTrainData();
         } catch (Exception e) {
             System.err.println("Warning: Could not update train seat count during cancellation.");

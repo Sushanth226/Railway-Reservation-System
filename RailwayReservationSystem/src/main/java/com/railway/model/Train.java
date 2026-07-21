@@ -1,6 +1,8 @@
 package com.railway.model;
 
 import java.io.Serializable;
+import java.util.LinkedList;
+import java.util.Queue;
 
 /**
  * Represents a Train in the Railway Reservation System.
@@ -17,11 +19,13 @@ public class Train implements Serializable {
     private int totalSeats;
     private int availableSeats;
     private double ticketPrice;
+    private Queue<String> waitingList;
 
     /**
      * Default constructor.
      */
     public Train() {
+        this.waitingList = new LinkedList<>();
     }
 
     /**
@@ -43,6 +47,7 @@ public class Train implements Serializable {
         this.totalSeats = totalSeats;
         this.availableSeats = availableSeats;
         this.ticketPrice = ticketPrice;
+        this.waitingList = new LinkedList<>();
     }
 
     // Getters and Setters
@@ -103,6 +108,14 @@ public class Train implements Serializable {
         this.ticketPrice = ticketPrice;
     }
 
+    public Queue<String> getWaitingList() {
+        return waitingList;
+    }
+
+    public void setWaitingList(Queue<String> waitingList) {
+        this.waitingList = waitingList;
+    }
+
     @Override
     public String toString() {
         return "Train [" +
@@ -111,6 +124,7 @@ public class Train implements Serializable {
                 ", Route='" + source + " -> " + destination + '\'' +
                 ", Seats (Available/Total)=" + availableSeats + "/" + totalSeats +
                 ", Price=₹" + ticketPrice +
+                ", Waitlisted=" + waitingList.size() +
                 ']';
     }
 }

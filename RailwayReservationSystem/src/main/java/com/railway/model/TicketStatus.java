@@ -14,5 +14,10 @@ public enum TicketStatus {
     /**
      * The ticket has been cancelled by the passenger.
      */
-    CANCELLED
+    CANCELLED,
+
+    /**
+     * The ticket is on the waiting list.
+     */
+    WAITLISTED
 }
